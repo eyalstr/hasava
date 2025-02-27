@@ -422,7 +422,6 @@ def fetch_notes_status_from_menora(case_id, server_name, database_name, user_nam
             connection.close()
 
 ############### דיונים במנורה #######################
-import pyodbc
 
 def fetch_discussion_status_from_menora(case_id, server_name, database_name, user_name, password):
     """Retrieve request status for each appeal ID and print them."""
@@ -480,6 +479,79 @@ def fetch_discussion_status_from_menora(case_id, server_name, database_name, use
                 log_and_print("אין מידע מבוקש", "info", is_hebrew=True)
 
             return discussions
+        else:
+            log_and_print(f"No Menora status found for case ID {case_id}", "warning", BOLD_YELLOW, is_hebrew=True)
+            return None
+    except Exception as e:
+        log_and_print(f"Error querying request status for Case ID {case_id}: {e}", "error", BOLD_RED, is_hebrew=True)
+        return None
+    finally:
+        # Close the cursor and connection to avoid open connections
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+
+
+############### הפצות במנורה #######################
+
+import pyodbc
+
+def fetch_distributions_from_menora(case_id, server_name, database_name, user_name, password):
+    """Retrieve request status for each appeal ID and print them."""
+    sql_query = """
+        select a.Appeal_Number_Display
+        from Menora_Conversion.dbo.Appeal a
+        join External_Courts.cnvrt.Case_Status_To_Case_Status_BO cn on a.Appeal_Status= cn.Case_Status_BO
+        join cases_bo.dbo.CT_Case_Status_Types c on c.Case_Status_Type_Id = cn.Case_Status_Type_Id
+        join cases_bo.dbo.CT_Request_Status_Types r on r.Request_Status_Type_Id = c.Request_Status_Type_Id
+        where cn.Court_Id = 11 and a.Case_id= ?   
+    """
+
+    sql_query_2 = """
+        select d.SendDate,d.SendUser,d.SendFrom,d.SendTo,d.SendSubject,d.SendBody,d.AttachmentsDocMojID,d.Discussion_Id,
+        d.SendErrorCode,d.SendErrorDesc,d.Distribution_Status,d.Distribution_Status_Desc,
+        d.Distribution_type, dt.Name 'סוג הפצה'
+        from Menora.dbo.Log_DistributionService d
+        join Menora.dbo.CT_Distribution_Type dt on d.Distribution_type=dt.Code
+        join Menora.dbo.Appeal a on d.appeal_id=a.Appeal_ID
+        where a.Appeal_Number_Display= ?
+    """
+
+    try:
+        # Establish the SQL Server connection
+        connection = pyodbc.connect(
+            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+            f"SERVER={server_name};"
+            f"DATABASE={database_name};"
+            f"UID={user_name};"
+            f"PWD={password};"
+            f"Trusted_Connection=yes;"
+        )
+        cursor = connection.cursor()
+        
+        cursor.execute(sql_query, case_id)
+        appeal_id_for_case = cursor.fetchall()
+
+        if appeal_id_for_case:
+            # Extract the Appeal Number from the first query's result
+            appeal_number = appeal_id_for_case[0][0]
+
+            cursor.execute(sql_query_2, appeal_number)
+            distributions = cursor.fetchall()
+
+            if distributions:
+                log_and_print(f"מספר הפצות: {len(distributions)}", is_hebrew=True)
+                for distribution in distributions:
+                    # Extracting relevant details for logging
+                    date = distribution[0]  # SendDate is the first item in the tuple
+                    subject = distribution[4]  # SendSubject is the fifth item in the tuple
+                    log_and_print(f"בתאריך: {date} נושא: {subject}", is_hebrew=True)
+            else:
+                log_and_print("אין מידע מבוקש", "info", is_hebrew=True)
+
+            return distributions
         else:
             log_and_print(f"No Menora status found for case ID {case_id}", "warning", BOLD_YELLOW, is_hebrew=True)
             return None
