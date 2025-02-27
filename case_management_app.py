@@ -22,7 +22,8 @@ from menora_utils import (fetch_request_status_from_menora,
                           connect_to_sql_server,connect_to_mongodb,
                           parse_leading_status_by_case_ids,create_output_with_all_status_cases,
                           parse_leading_status_by_case_id,collect_cases_with_mid_request,
-                          fetch_discussion_status_from_menora,fetch_notes_status_from_menora,fetch_distributions_from_menora)
+                          fetch_discussion_status_from_menora,fetch_notes_status_from_menora,fetch_distributions_from_menora,
+                          fetch_decisions_from_menora)
 
 from config import cases_list
 
@@ -159,12 +160,14 @@ def display_menu():
     Display a menu of options for the user and return their choice.
     """
     print(f"\nMenu:")
-    print(f"1. {normalize_hebrew('מציג סטטוס של תיק')}")    
-    print(f"2. {normalize_hebrew('מציג סטטוס של כל התיקים')}")   
-    print(f"3. {normalize_hebrew('תיקים עם בקשות ביניים חדשות')}")   
+    print(f"1. {normalize_hebrew('מציג סטטוס של תיק באחודה')}")    
+    print(f"2. {normalize_hebrew('מציג סטטוס של כל התיקים באחודה')}")   
+    print(f"3. {normalize_hebrew('תיקים עם בקשות ביניים חדשות באחודה')}")   
     print(f"4. {normalize_hebrew('מציג סטטוס של תיק במנורה')}")
     print(f"5. {normalize_hebrew('הצגת תכתובות במנורה')}")
     print(f"6. {normalize_hebrew('הצגת דיונים במנורה')}")
+    print(f"7. {normalize_hebrew('הצגת הפצות במנורה')}")
+    print(f"8. {normalize_hebrew('הצגת החלטות במנורה')}")
     print(f"9. {normalize_hebrew('יציאה')}")
 
     try:
@@ -389,7 +392,11 @@ if __name__ == "__main__":
             elif choice == 7:
                 case_id = get_case_id_by_displayed_id(db)
                 discussions = fetch_distributions_from_menora(case_id,server_name, database_name, user_name, password)
-                    
+            
+            elif choice == 8:
+                case_id = get_case_id_by_displayed_id(db)
+                discussions = fetch_decisions_from_menora(case_id,server_name, database_name, user_name, password)
+                            
             elif choice == 9:
                 log_and_print("Exiting application.", "info")
                 break

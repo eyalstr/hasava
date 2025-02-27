@@ -564,3 +564,84 @@ def fetch_distributions_from_menora(case_id, server_name, database_name, user_na
             cursor.close()
         if connection:
             connection.close()
+
+############### החלטות במנורה #######################
+
+import pyodbc
+
+def fetch_decisions_from_menora(case_id, server_name, database_name, user_name, password):
+    """Retrieve request status for each appeal ID and print them."""
+    sql_query = """
+        select a.Appeal_Number_Display
+        from Menora_Conversion.dbo.Appeal a
+        join External_Courts.cnvrt.Case_Status_To_Case_Status_BO cn on a.Appeal_Status= cn.Case_Status_BO
+        join cases_bo.dbo.CT_Case_Status_Types c on c.Case_Status_Type_Id = cn.Case_Status_Type_Id
+        join cases_bo.dbo.CT_Request_Status_Types r on r.Request_Status_Type_Id = c.Request_Status_Type_Id
+        where cn.Court_Id = 11 and a.Case_id= ?   
+    """
+
+    sql_query_2 = """
+       select distinct d.Decision_Date,
+        d.Decision_Id, a.Appeal_Number_Display, d.Status,ds.Name,d.Decision_Type, dt.Name,
+        d.Is_For_Advertisement
+        from Menora_Conversion.dbo.Decision d
+        join Menora_Conversion.dbo.Link_Request_Decision ld on ld.Decision_Id=d.Decision_Id
+        join Menora_Conversion.dbo.CT_Decision_Status ds on ds.Code=d.Status
+        join Menora_Conversion.dbo.CT_Decision_Type dt on dt.Code=d.Decision_Type
+        join Menora_Conversion.dbo.Appeal a on ld.appeal_id=a.Appeal_ID
+        where  a.Appeal_Number_Display= ?
+        order by 1 desc
+    """
+
+    try:
+        # Establish the SQL Server connection
+        connection = pyodbc.connect(
+            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+            f"SERVER={server_name};"
+            f"DATABASE={database_name};"
+            f"UID={user_name};"
+            f"PWD={password};"
+            f"Trusted_Connection=yes;"
+        )
+        cursor = connection.cursor()
+        
+        cursor.execute(sql_query, case_id)
+        appeal_id_for_case = cursor.fetchall()
+
+        if appeal_id_for_case:
+            # Extract the Appeal Number from the first query's result
+            appeal_number = appeal_id_for_case[0][0]
+
+            cursor.execute(sql_query_2, appeal_number)
+            decisions = cursor.fetchall()
+
+            if decisions:
+                log_and_print(f"מספר החלטות: {len(decisions)}", is_hebrew=True)
+                for decision in decisions:
+                    # Extracting relevant details for logging
+                    decision_date = decision[0]  # Decision_Date is the first item in the tuple
+                    decision_id = decision[1]  # Decision_Id is the second item
+                    appeal_number_display = decision[2]  # Appeal_Number_Display is the third item
+                    status = decision[3]  # Status is the fourth item
+                    status_name = decision[4]  # Status name (from the join with CT_Decision_Status)
+                    decision_type = decision[5]  # Decision_Type
+                    decision_type_name = decision[6]  # Decision_Type name (from the join with CT_Decision_Type)
+                    is_for_advertisement = decision[7]  # Is_For_Advertisement
+
+                    log_and_print(f"החלטה {decision_id} ({decision_date}) - {status_name} - {decision_type_name} - פרסום: {is_for_advertisement}", is_hebrew=True)
+            else:
+                log_and_print("אין מידע מבוקש", "info", is_hebrew=True)
+
+            return decisions
+        else:
+            log_and_print(f"No Menora status found for case ID {case_id}", "warning", BOLD_YELLOW, is_hebrew=True)
+            return None
+    except Exception as e:
+        log_and_print(f"Error querying request status for Case ID {case_id}: {e}", "error", BOLD_RED, is_hebrew=True)
+        return None
+    finally:
+        # Close the cursor and connection to avoid open connections
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
