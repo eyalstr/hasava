@@ -355,35 +355,36 @@ def fetch_request_status_from_menora(case_id,server_name, database_name, user_na
         log_and_print(f"Error querying request status for Case ID {case_id}: {e}", "error", BOLD_RED, is_hebrew=True)
         return None
 
-
+    finally:
+        # Close the cursor and connection to avoid open connections
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
 ############################### תכתובות במנורה  ######################
 
 
-def fetch_discussion_status_from_menora(case_id,server_name, database_name, user_name, password):
-    
+def fetch_notes_status_from_menora(case_id, server_name, database_name, user_name, password):
     """Retrieve request status for each appeal ID and print them."""
-    sql_query ="""
+    sql_query = """
         select a.Appeal_Number_Display
-        from Menora_Conversion.dbo.Appeal a 
+        from Menora_Conversion.dbo.Appeal a
         join External_Courts.cnvrt.Case_Status_To_Case_Status_BO cn on a.Appeal_Status= cn.Case_Status_BO
         join cases_bo.dbo.CT_Case_Status_Types c on c.Case_Status_Type_Id = cn.Case_Status_Type_Id
         join cases_bo.dbo.CT_Request_Status_Types r on r.Request_Status_Type_Id = c.Request_Status_Type_Id
         where cn.Court_Id = 11 and a.Case_id= ?   
     """
 
-
     sql_query_2 = """
-        SELECT n.NoteId,n.NoteBody 'תוכן',n.CreateUserID,n.CreateUser,n.Create_Date,n.NoteStatus,ns.Name 'סטטוס',
-        n.NoteSubject,n.ReminderDate 'תאריך תזכורת'
+        SELECT n.NoteId, n.NoteBody 'תוכן', n.CreateUserID, n.CreateUser, n.Create_Date, n.NoteStatus, ns.Name 'סטטוס',
+        n.NoteSubject, n.ReminderDate 'תאריך תזכורת'
         FROM Menora_Conversion.dbo.AppealNotes n
         join Menora_Conversion.dbo.CT_NoteStatus ns on n.NoteStatus=ns.Code
         join Menora_Conversion.dbo.Appeal a on n.Appeal_Id=a.Appeal_ID
-        where  a.Appeal_Number_Display= ?
-
+        where a.Appeal_Number_Display= ?
     """
 
     try:
-        
         # Establish the SQL Server connection
         connection = pyodbc.connect(
             f"DRIVER={{ODBC Driver 17 for SQL Server}};"
@@ -394,18 +395,100 @@ def fetch_discussion_status_from_menora(case_id,server_name, database_name, user
             f"Trusted_Connection=yes;"
         )
         cursor = connection.cursor()
-        #log_and_print("Connection to SQL Server established successfully.\n", "info")
-
+        
         cursor.execute(sql_query, case_id)
         appeal_id_for_case = cursor.fetchall()
+
         if appeal_id_for_case:
-            cursor.execute(sql_query_2, appeal_id_for_case)
-            dicscussions = cursor.fetchall()
-            
-            return dicscussions
+            # Extract the Appeal Number from the first query's result
+            appeal_number = appeal_id_for_case[0][0]
+
+            cursor.execute(sql_query_2, appeal_number)
+            notes = cursor.fetchall()
+
+            return notes
         else:
             log_and_print(f"No Menora status found for case ID {case_id}", "warning", BOLD_YELLOW, is_hebrew=True)
             return None
     except Exception as e:
         log_and_print(f"Error querying request status for Case ID {case_id}: {e}", "error", BOLD_RED, is_hebrew=True)
         return None
+
+    finally:
+        # Close the cursor and connection to avoid open connections
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
+
+############### דיונים במנורה #######################
+import pyodbc
+
+def fetch_discussion_status_from_menora(case_id, server_name, database_name, user_name, password):
+    """Retrieve request status for each appeal ID and print them."""
+    sql_query = """
+        select a.Appeal_Number_Display
+        from Menora_Conversion.dbo.Appeal a
+        join External_Courts.cnvrt.Case_Status_To_Case_Status_BO cn on a.Appeal_Status= cn.Case_Status_BO
+        join cases_bo.dbo.CT_Case_Status_Types c on c.Case_Status_Type_Id = cn.Case_Status_Type_Id
+        join cases_bo.dbo.CT_Request_Status_Types r on r.Request_Status_Type_Id = c.Request_Status_Type_Id
+        where cn.Court_Id = 11 and a.Case_id= ?   
+    """
+
+    sql_query_2 = """
+        select d.Discussion_Id,d.Discussion_Date, d.Discussion_Strat_Time,d.Discussion_End_Time,
+        d.Status, ds.Name 'סטטוס', d.virtualDiscussion, d.discussionLink, a.Appeal_Number_Display,
+        d.CancelationReason, d.Moj_ID
+        from Menora_Conversion.dbo.Discussion d
+        join Menora_Conversion.dbo.Link_Request_Discussion lr on lr.Discussion_Id=d.Discussion_Id
+        join Menora_Conversion.dbo.CT_Discussion_Status ds on ds.Code=d.Status
+        left join Menora_Conversion.dbo.CT_DiscussionCancelationReason cr on cr.Code=d.CancelationReason
+        join Menora_Conversion.dbo.Appeal a on lr.appeal_id=a.Appeal_ID
+        where a.Appeal_Number_Display= ?
+    """
+
+    try:
+        # Establish the SQL Server connection
+        connection = pyodbc.connect(
+            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+            f"SERVER={server_name};"
+            f"DATABASE={database_name};"
+            f"UID={user_name};"
+            f"PWD={password};"
+            f"Trusted_Connection=yes;"
+        )
+        cursor = connection.cursor()
+        
+        cursor.execute(sql_query, case_id)
+        appeal_id_for_case = cursor.fetchall()
+
+        if appeal_id_for_case:
+            # Extract the Appeal Number from the first query's result
+            appeal_number = appeal_id_for_case[0][0]
+
+            cursor.execute(sql_query_2, appeal_number)
+            discussions = cursor.fetchall()
+
+            if discussions:
+                log_and_print(f"מספר דיונים: {len(discussions)}", is_hebrew=True)
+                for discussion in discussions:
+                    # Extracting relevant details for logging
+                    discussion_date = discussion[1]
+                    status = discussion[5]
+                    log_and_print(f"דיון בתאריך: {discussion_date}, סטטוס: {status}", is_hebrew=True)
+            else:
+                log_and_print("אין מידע מבוקש", "info", is_hebrew=True)
+
+            return discussions
+        else:
+            log_and_print(f"No Menora status found for case ID {case_id}", "warning", BOLD_YELLOW, is_hebrew=True)
+            return None
+    except Exception as e:
+        log_and_print(f"Error querying request status for Case ID {case_id}: {e}", "error", BOLD_RED, is_hebrew=True)
+        return None
+    finally:
+        # Close the cursor and connection to avoid open connections
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
