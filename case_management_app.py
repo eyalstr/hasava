@@ -17,15 +17,16 @@ from bpm_utils import (fetch_process_ids_and_request_type_by_case_id_sorted,
                        check_process_assignment_is_valid,
                        filter_population_process_status,
                        filter_internal_judge_task_process_status,
-                       filter_internal_secretery_task_process_status) 
+                       filter_internal_secretery_task_process_status,fetch_all_process_ids_by_case_ids,check_first_process_alive) 
 from menora_utils import (fetch_request_status_from_menora,
                           connect_to_sql_server,connect_to_mongodb,
-                          parse_leading_status_by_case_ids,create_output_with_all_status_cases,
+                          parse_leading_status_by_case_ids,create_output_with_all_status_cases,create_common_output_with_all_status_cases,
                           parse_leading_status_by_case_id,collect_cases_with_mid_request,
                           fetch_discussion_status_from_menora,fetch_notes_status_from_menora,fetch_distributions_from_menora,
                           fetch_decisions_from_menora)
 
 from config import cases_list
+from url_tests import test_url_based_case_id
 
 import os
 
@@ -162,11 +163,11 @@ def display_menu():
     print(f"\nMenu:")
     print(f"1. {normalize_hebrew('מציג סטטוס של תיק באחודה')}")    
     print(f"2. {normalize_hebrew('מציג סטטוס של כל התיקים באחודה')}")   
-    print(f"3. {normalize_hebrew('תיקים עם בקשות ביניים חדשות באחודה')}")   
+    print(f"3. {normalize_hebrew('BPM לכל התיקים באחודה בודק')}")   
     print(f"4. {normalize_hebrew('מציג סטטוס של תיק במנורה')}")
     print(f"5. {normalize_hebrew('הצגת תכתובות במנורה')}")
     print(f"6. {normalize_hebrew('הצגת דיונים במנורה')}")
-    print(f"7. {normalize_hebrew('הצגת הפצות במנורה')}")
+    print(f"7. {normalize_hebrew('הצגת הפצות במנורה')}")    
     print(f"8. {normalize_hebrew('הצגת החלטות במנורה')}")
     print(f"9. {normalize_hebrew('יציאה')}")
 
@@ -203,7 +204,7 @@ def get_case_id_by_displayed_id(db):
             case_id = None
 
             # Determine the input type (CaseDisplayId or SiteActionId)
-            if "/" in user_input:
+            if "-" in user_input:
                 # Handle CaseDisplayId
                 #log_and_print(f"Identified input as Case Displayed ID: {user_input}", "info")
                 case_id = get_case_id_from_displayed(user_input, db)
@@ -342,15 +343,18 @@ if __name__ == "__main__":
             log_and_print("Failed to connect to MongoDB. Exiting.", "error")
             exit()
 
-
+        case_id = get_case_id_by_displayed_id(db)
+        
         while True:
             IsOtherTask = False
             IsJudgeTask = False
+           
+
             choice = display_menu()
 
             if choice == 1:
                  # Request Case Display ID from the user
-                case_id = get_case_id_by_displayed_id(db)
+                # case_id = get_case_id_by_displayed_id(db)
                 list_of_leads = parse_leading_status_by_case_id(case_id, db)
                 #create_output_with_all_status_cases(list_of_leads,"output_statuses.xlsx")
             
@@ -360,24 +364,34 @@ if __name__ == "__main__":
                 create_output_with_all_status_cases(list_of_leads,"output_statuses.xlsx")
     
             elif choice == 3:
-                list_of_req = collect_cases_with_mid_request(cases_list, db)
-                if list_of_req:
-                    for item in list_of_req:
-                        log_and_print(f"תיק:{item}")
-                else:
-                    log_and_print("אין מידע מבוקש", "info", is_hebrew=True)
+                # Step 1: Get the leading status from Mongo
+                list_of_leads = parse_leading_status_by_case_ids(cases_list, db)
+                
+                # Step 2: Get the first process ID per case from Mongo (no sorting)
+                list_of_process_ids = fetch_all_process_ids_by_case_ids(cases_list, db)
 
-                #create_output_with_all_status_cases(list_of_leads,"output_statuses.xlsx")
+                # Step 3: Get BPM status of first process for each case (from SQL)
+                mapping_cases_tbl = check_first_process_alive(list_of_process_ids,server_name, database_name, user_name, password)
+
+                # Step 4: Write the combined results to Excel
+                create_common_output_with_all_status_cases(list_of_leads,list_of_process_ids,mapping_cases_tbl,output_file="output.xlsx")
+
+                # if list_of_process_ids:
+                #     mapping_cases_tbl = check_first_process_alive(list_of_process_ids,server_name, database_name, user_name, password)
+                #     if mapping_cases_tbl:
+                #         for case_id, status in mapping_cases_tbl.items():
+                #             log_and_print(f"🔍 Case {case_id}: Process is {status}")
+                # #log_and_print(f"list_of_process_ids = {list_of_process_ids}")
 
             
             elif choice == 4:
                  # Request Case Display ID from the user
-                case_id = get_case_id_by_displayed_id(db)
+                #case_id = get_case_id_by_displayed_id(db)
                 men_status = fetch_request_status_from_menora(case_id,server_name, database_name, user_name, password)
                 log_and_print(f"סטטוס תיק {case_id} במנורה {men_status}",is_hebrew=True)
                 #create_output_with_all_status_cases(list_of_leads,"output_statuses.xlsx")
             elif choice == 5:
-                case_id = get_case_id_by_displayed_id(db)
+                #case_id = get_case_id_by_displayed_id(db)
                 notes = fetch_notes_status_from_menora(case_id,server_name, database_name, user_name, password)
                 if notes:
                     for note in notes:
@@ -386,19 +400,23 @@ if __name__ == "__main__":
                     log_and_print("אין מידע מבוקש", "info", is_hebrew=True)
 
             elif choice == 6:
-                case_id = get_case_id_by_displayed_id(db)
+                #case_id = get_case_id_by_displayed_id(db)
                 discussions = fetch_discussion_status_from_menora(case_id,server_name, database_name, user_name, password)
 
             elif choice == 7:
-                case_id = get_case_id_by_displayed_id(db)
+                #case_id = get_case_id_by_displayed_id(db)
                 discussions = fetch_distributions_from_menora(case_id,server_name, database_name, user_name, password)
             
             elif choice == 8:
-                case_id = get_case_id_by_displayed_id(db)
+                #case_id = get_case_id_by_displayed_id(db)
                 discussions = fetch_decisions_from_menora(case_id,server_name, database_name, user_name, password)
                             
             elif choice == 9:
                 log_and_print("Exiting application.", "info")
+                break
+
+            elif choice == 10:
+                test_url_based_case_id()
                 break
 
     except Exception as e:

@@ -454,3 +454,124 @@ def check_process_assignment_is_valid(all_waiting_tasks, server_name, database_n
             connection.close()
 
     return valid_tasks
+
+
+from typing import List, Dict
+import os
+
+def fetch_all_process_ids_by_case_ids(case_ids: List[int], db) -> Dict[int, List[str]]:
+    """
+    Processes a list of Case IDs and returns all associated ProcessIds from MongoDB.
+
+    Args:
+        case_ids (List[int]): A list of Case IDs.
+        db: The MongoDB database connection.
+
+    Returns:
+        Dict[int, List[str]]: A dictionary with Case ID as key and list of ProcessIds as value.
+    """
+    court_id = 11
+    log_and_print(f"court_id={court_id}")
+    result = {}
+
+    for case_id in case_ids:
+        try:
+            collection = db["Case"]
+            document = collection.find_one(
+            {"_id": case_id, "CourtId": court_id},
+                {
+                    "Requests.RequestId": 1,
+                    "Requests.RequestTypeId": 1,
+                    "Requests.Processes.ProcessId": 1,
+                    "Requests.Processes.LastPublishDate": 1,
+                    "_id": 1
+                }
+            )
+
+            if not document:
+                continue
+
+            process_ids = []
+            for request in document.get("Requests", []):
+                for process in request.get("Processes", []):
+                    pid = process.get("ProcessId")
+                    if pid:
+                        process_ids.append(pid)
+
+            if process_ids:
+                result[case_id] = process_ids
+
+        except Exception as e:
+            print(f"❌ Error fetching processes for case {case_id}: {e}")
+
+    return result
+
+def check_first_process_alive(case_to_processes: dict, server, db, user, password) -> dict:
+    """
+    Check whether the first ProcessId per case is active/stable by querying the SQL Server.
+
+    Args:
+        case_to_processes (dict): Dictionary where key = case_id, value = list of ProcessIds.
+        server (str): SQL Server name.
+        db (str): Database name.
+        user (str): Username.
+        password (str): Password.
+
+    Returns:
+        dict: {case_id: "alive" | "dead" | "no_process" | "error"}
+    """
+    import pyodbc
+    
+    results = {}
+    node_id = 802  # Can be passed as arg if you want to make it dynamic
+
+    try:
+        conn_str = (
+            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+            f"SERVER={server};"
+            f"DATABASE={db};"
+            f"UID={user};"
+            f"PWD={password};"
+            f"Trusted_Connection=yes;"
+        )
+
+        connection = pyodbc.connect(conn_str)
+        cursor = connection.cursor()
+
+        for case_id, process_list in case_to_processes.items():
+            try:
+                if not process_list:
+                    log_and_print(f"⚠️ No process list for case {case_id}", "warning")
+                    results[case_id] = "no_process"
+                    continue
+
+                first_process_id = process_list[0]
+                sql_query = """
+                    SELECT TOP 1 p.[ProcessID], pt.[ProcessTypeName]
+                    FROM [BPM].[dbo].[Processes] AS p
+                    JOIN [BPM].[dbo].[ProcessTypes] AS pt  
+                        ON pt.[ProcessTypeID] = p.[ProcessTypeID]
+                    WHERE p.[ProcessID] = ? AND p.[LdapLeafID] = ?;
+                """
+                cursor.execute(sql_query, first_process_id, node_id)
+                rows = cursor.fetchall()
+
+                if rows:
+                    log_and_print(f"✅ Process is alive for case {case_id}: {rows[0]}", "info")
+                    results[case_id] = "alive"
+                else:
+                    log_and_print(f"❌ No match for ProcessID in BPM for case {case_id}", "warning")
+                    results[case_id] = "dead"
+
+            except Exception as inner_e:
+                log_and_print(f"❌ Error checking process for case {case_id}: {inner_e}", "error", is_hebrew=True)
+                results[case_id] = "error"
+
+        cursor.close()
+        connection.close()
+
+    except Exception as conn_e:
+        log_and_print(f"❌ SQL connection failed: {conn_e}", "error")
+        return {}
+
+    return results

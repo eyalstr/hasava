@@ -23,6 +23,7 @@ def parse_leading_status_by_case_ids(case_ids: list, db: Database) -> list:
     for case_id in case_ids:
         try:
             collection = db["Case"]
+            log_and_print(f"case_id={case_id}")
             document = collection.find_one({"_id": case_id}, {"Requests": 1, "_id": 0})
 
             if not document:
@@ -233,6 +234,39 @@ def fetch_request_status_from_menora(case_id, cursor):
 
 #########################################################################################################
 import pandas as pd
+
+def create_common_output_with_all_status_cases(leading_statuses_list, case_to_processes, bpm_status_map, output_file="output.xlsx"):
+    """
+    Creates an Excel file with case ID, leading status, and BPM status in the correct column order.
+
+    Args:
+        leading_statuses_list (list): List of {"CaseId": ..., "LeadingStatus": ...}
+        case_to_processes (dict): Dict of {case_id: [process_ids]}
+        bpm_status_map (dict): Dict of {case_id: "alive"/"dead"/"no_process"/"error"}
+        output_file (str): Output Excel file path.
+    """
+
+    combined_data = []
+
+    for entry in leading_statuses_list:
+        case_id = entry.get("CaseId")
+        leading_status = entry.get("LeadingStatus")
+        process_ids = case_to_processes.get(case_id, [])
+        bpm_status = bpm_status_map.get(case_id, "unknown")
+
+        combined_data.append({
+            "מצב אחודה": leading_status,
+            "סטטוס BPM": bpm_status,
+            "ProcessId": process_ids,
+            "מספר תיק": case_id
+        })
+
+    df = pd.DataFrame(combined_data)
+    df = df[["מצב אחודה", "סטטוס BPM", "ProcessId", "מספר תיק"]]  # Ensure column order
+
+    df.to_excel(output_file, index=False)
+    print(f"✅ Data written to {output_file} with {len(df)} cases.")
+
 
 
 def create_output_with_all_status_cases(leading_statuses_list: list, output_file: str) -> None:
