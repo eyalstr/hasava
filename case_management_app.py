@@ -23,7 +23,7 @@ from menora_utils import (fetch_request_status_from_menora,
                           parse_leading_status_by_case_ids,create_output_with_all_status_cases,create_common_output_with_all_status_cases,
                           parse_leading_status_by_case_id,collect_cases_with_mid_request,
                           fetch_discussion_status_from_menora,fetch_notes_status_from_menora,fetch_distributions_from_menora,
-                          fetch_decisions_from_menora)
+                          fetch_decisions_from_menora,parse_conv_status_by_case_ids,check_continued_process_status)
 
 from config import cases_list
 from url_tests import test_url_based_case_id
@@ -355,26 +355,41 @@ if __name__ == "__main__":
             if choice == 1:
                  # Request Case Display ID from the user
                 # case_id = get_case_id_by_displayed_id(db)
-                list_of_leads = parse_leading_status_by_case_id(case_id, db)
+                #list_of_leads = parse_leading_status_by_case_id(case_id, db)
                 #create_output_with_all_status_cases(list_of_leads,"output_statuses.xlsx")
-            
+                parse_conv_status_by_case_ids(cases_list, db)
             
             elif choice == 2:
                 list_of_leads = parse_leading_status_by_case_ids(cases_list, db)
                 create_output_with_all_status_cases(list_of_leads,"output_statuses.xlsx")
     
             elif choice == 3:
-                # Step 1: Get the leading status from Mongo
+                 # Step 1: Get the leading status from Mongo
                 list_of_leads = parse_leading_status_by_case_ids(cases_list, db)
-                
+
                 # Step 2: Get the first process ID per case from Mongo (no sorting)
                 list_of_process_ids = fetch_all_process_ids_by_case_ids(cases_list, db)
 
                 # Step 3: Get BPM status of first process for each case (from SQL)
-                mapping_cases_tbl = check_first_process_alive(list_of_process_ids,server_name, database_name, user_name, password)
+                mapping_cases_tbl = check_first_process_alive(
+                    list_of_process_ids,
+                    server_name,
+                    database_name,
+                    user_name,
+                    password
+                )
 
-                # Step 4: Write the combined results to Excel
-                create_common_output_with_all_status_cases(list_of_leads,list_of_process_ids,mapping_cases_tbl,output_file="output.xlsx")
+                # Step 4: Check if ContinuedProcessId exists in any decision for each case
+                continued_process_map = check_continued_process_status(cases_list, db)
+
+                # Step 5: Write the combined results to Excel
+                create_common_output_with_all_status_cases(
+                    list_of_leads,
+                    list_of_process_ids,
+                    mapping_cases_tbl,
+                    continued_process_map,
+                    output_file="output.xlsx"
+                )
 
                 # if list_of_process_ids:
                 #     mapping_cases_tbl = check_first_process_alive(list_of_process_ids,server_name, database_name, user_name, password)
@@ -383,13 +398,26 @@ if __name__ == "__main__":
                 #             log_and_print(f"🔍 Case {case_id}: Process is {status}")
                 # #log_and_print(f"list_of_process_ids = {list_of_process_ids}")
 
-            
+
             elif choice == 4:
-                 # Request Case Display ID from the user
-                #case_id = get_case_id_by_displayed_id(db)
-                men_status = fetch_request_status_from_menora(case_id,server_name, database_name, user_name, password)
-                log_and_print(f"סטטוס תיק {case_id} במנורה {men_status}",is_hebrew=True)
-                #create_output_with_all_status_cases(list_of_leads,"output_statuses.xlsx")
+                #sub_decision_map = extract_continued_process_ids(cases_list[6:10], db)          
+                continued_process_map = check_continued_process_status(cases_list, db)
+
+                for case_id, has_cp in continued_process_map.items():
+                    print(f"🟡 {case_id}:{has_cp}")
+                    # if has_cp is True:
+                    #     print(f"✅ Case ID {case_id}: Has ContinuedProcessId = True")
+                    # elif has_cp is False:
+                    #     print(f"🟡 Case ID {case_id}: Has ContinuedProcessId = False")
+                    # else:
+                    #     print(f"❌ Case ID {case_id}: Document not found or error occurred.")
+
+            # elif choice == 4:
+            #      # Request Case Display ID from the user
+            #     #case_id = get_case_id_by_displayed_id(db)
+            #     men_status = fetch_request_status_from_menora(case_id,server_name, database_name, user_name, password)
+            #     log_and_print(f"סטטוס תיק {case_id} במנורה {men_status}",is_hebrew=True)
+            #     #create_output_with_all_status_cases(list_of_leads,"output_statuses.xlsx")
             elif choice == 5:
                 #case_id = get_case_id_by_displayed_id(db)
                 notes = fetch_notes_status_from_menora(case_id,server_name, database_name, user_name, password)
