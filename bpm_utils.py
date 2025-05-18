@@ -558,10 +558,10 @@ def check_first_process_alive(case_to_processes: dict, server, db, user, passwor
 
                 if rows:
                     log_and_print(f"✅ Process is alive for case {case_id}: {rows[0]}", "info")
-                    results[case_id] = "alive"
+                    results[case_id] = "תקין"
                 else:
                     log_and_print(f"❌ No match for ProcessID in BPM for case {case_id}", "warning")
-                    results[case_id] = "dead"
+                    results[case_id] = "לא תקין"
 
             except Exception as inner_e:
                 log_and_print(f"❌ Error checking process for case {case_id}: {inner_e}", "error", is_hebrew=True)

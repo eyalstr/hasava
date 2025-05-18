@@ -20,12 +20,12 @@ from bpm_utils import (fetch_process_ids_and_request_type_by_case_id_sorted,
                        filter_internal_secretery_task_process_status,fetch_all_process_ids_by_case_ids,check_first_process_alive) 
 from menora_utils import (fetch_request_status_from_menora,
                           connect_to_sql_server,connect_to_mongodb,
-                          parse_leading_status_by_case_ids,create_output_with_all_status_cases,create_common_output_with_all_status_cases,
+                          parse_leading_status_by_case_ids,create_common_output_with_all_status_cases,
                           parse_leading_status_by_case_id,collect_cases_with_mid_request,
                           fetch_discussion_status_from_menora,fetch_notes_status_from_menora,fetch_distributions_from_menora,
-                          fetch_decisions_from_menora,parse_conv_status_by_case_ids,check_continued_process_status)
+                          fetch_decisions_from_menora,parse_conv_status_by_case_ids,check_specific_continued_process_status)
 
-from config import cases_list
+from config import cases_list,caseid_table,decisionid_table,subdecision_table
 from url_tests import test_url_based_case_id
 
 import os
@@ -161,14 +161,14 @@ def display_menu():
     Display a menu of options for the user and return their choice.
     """
     print(f"\nMenu:")
-    print(f"1. {normalize_hebrew('מציג סטטוס של תיק באחודה')}")    
-    print(f"2. {normalize_hebrew('מציג סטטוס של כל התיקים באחודה')}")   
-    print(f"3. {normalize_hebrew('BPM לכל התיקים באחודה בודק')}")   
-    print(f"4. {normalize_hebrew('מציג סטטוס של תיק במנורה')}")
-    print(f"5. {normalize_hebrew('הצגת תכתובות במנורה')}")
-    print(f"6. {normalize_hebrew('הצגת דיונים במנורה')}")
-    print(f"7. {normalize_hebrew('הצגת הפצות במנורה')}")    
-    print(f"8. {normalize_hebrew('הצגת החלטות במנורה')}")
+   # print(f"1. {normalize_hebrew('מציג סטטוס של תיק באחודה')}")    
+   # print(f"2. {normalize_hebrew('מציג סטטוס של כל התיקים באחודה')}")   
+    print(f"3. {normalize_hebrew('בדיקות מקיפות להסבת נתונים לאחודה')}")   
+   # print(f"4. {normalize_hebrew('מציג סטטוס של תיק במנורה')}")
+   # print(f"5. {normalize_hebrew('הצגת תכתובות במנורה')}")
+   # print(f"6. {normalize_hebrew('הצגת דיונים במנורה')}")
+   # print(f"7. {normalize_hebrew('הצגת הפצות במנורה')}")    
+   # print(f"8. {normalize_hebrew('הצגת החלטות במנורה')}")
     print(f"9. {normalize_hebrew('יציאה')}")
 
     try:
@@ -361,7 +361,7 @@ if __name__ == "__main__":
             
             elif choice == 2:
                 list_of_leads = parse_leading_status_by_case_ids(cases_list, db)
-                create_output_with_all_status_cases(list_of_leads,"output_statuses.xlsx")
+               # create_output_with_all_status_cases(list_of_leads,"output_statuses.xlsx")
     
             elif choice == 3:
                  # Step 1: Get the leading status from Mongo
@@ -379,15 +379,21 @@ if __name__ == "__main__":
                     password
                 )
 
-                # Step 4: Check if ContinuedProcessId exists in any decision for each case
-                continued_process_map = check_continued_process_status(cases_list, db)
+                # ✅ Step 4: Get conversion status
+                conversion_status_list = parse_conv_status_by_case_ids(cases_list, db)
 
-                # Step 5: Write the combined results to Excel
+                # Step 5: Check if ContinuedProcessId exists in any decision for each case
+                continued_process_map = check_specific_continued_process_status(
+                    caseid_table, decisionid_table, subdecision_table, db
+                )
+
+                # Step 6: Write combined results to Excel
                 create_common_output_with_all_status_cases(
                     list_of_leads,
                     list_of_process_ids,
                     mapping_cases_tbl,
                     continued_process_map,
+                    conversion_status_list,  # ✅ pass this new argument
                     output_file="output.xlsx"
                 )
 
@@ -400,17 +406,21 @@ if __name__ == "__main__":
 
 
             elif choice == 4:
-                #sub_decision_map = extract_continued_process_ids(cases_list[6:10], db)          
-                continued_process_map = check_continued_process_status(cases_list, db)
+                #sub_decision_map = extract_continued_process_ids(cases_list[6:10], db)     
+             
+
+                continued_process_map = check_specific_continued_process_status(caseid_table, decisionid_table, subdecision_table, db)
 
                 for case_id, has_cp in continued_process_map.items():
-                    print(f"🟡 {case_id}:{has_cp}")
-                    # if has_cp is True:
-                    #     print(f"✅ Case ID {case_id}: Has ContinuedProcessId = True")
-                    # elif has_cp is False:
-                    #     print(f"🟡 Case ID {case_id}: Has ContinuedProcessId = False")
-                    # else:
-                    #     print(f"❌ Case ID {case_id}: Document not found or error occurred.")
+                    if has_cp is True:
+                        status = "✅ ContinuedProcessId exists"
+                    elif has_cp is False:
+                        status = "❌ ContinuedProcessId is None"
+                    else:
+                        status = "⚠️ Not found or error"
+                    
+                    print(f"{case_id}: {status}")
+
 
             # elif choice == 4:
             #      # Request Case Display ID from the user

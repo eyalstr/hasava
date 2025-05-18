@@ -234,13 +234,34 @@ def fetch_request_status_from_menora(case_id, cursor):
 
 #########################################################################################################
 import pandas as pd
+
 def create_common_output_with_all_status_cases(
     leading_statuses_list,
     case_to_processes,
     bpm_status_map,
     continued_process_map,
+    conversion_status_list,
     output_file="output.xlsx"
 ):
+    """
+    Creates an Excel file with case ID, leading status, BPM status,
+    continued process flag, and conversion flag.
+
+    Args:
+        leading_statuses_list (list): List of {"CaseId": ..., "LeadingStatus": ...}
+        case_to_processes (dict): {case_id: [process_ids]}
+        bpm_status_map (dict): {case_id: "alive"/"dead"/"no_process"/"error"}
+        continued_process_map (dict): {case_id: True/False/None}
+        conversion_status_list (list): List of {"CaseId": ..., "IsConversion": True/False}
+        output_file (str): Output Excel file path
+    """
+
+    # Create lookup dictionary for conversion flag
+    conversion_map = {
+        entry["CaseId"]: entry.get("IsConversion", False)
+        for entry in conversion_status_list
+    }
+
     combined_data = []
 
     for entry in leading_statuses_list:
@@ -248,56 +269,25 @@ def create_common_output_with_all_status_cases(
         leading_status = entry.get("LeadingStatus")
         process_ids = case_to_processes.get(case_id, [])
         bpm_status = bpm_status_map.get(case_id, "unknown")
-        has_continued = continued_process_map.get(case_id)
+        has_cp = continued_process_map.get(case_id, None)
+        is_conversion = conversion_map.get(case_id, False)
 
         combined_data.append({
+            "מספר תיק": case_id,
             "מצב אחודה": leading_status,
             "סטטוס BPM": bpm_status,
             "ProcessId": process_ids,
-            "מספר תיק": case_id,
-            "האם יש המשך תהליך": has_continued
+            "המשך טיפול": (
+                "✔️ קיים" if has_cp is True else
+                "❌ אין" if has_cp is False else
+                "⚠️ שגיאה או חסר"
+            ),
+            "תיק הסבה": "✔️" if is_conversion else ""
         })
 
     df = pd.DataFrame(combined_data)
-    df = df[["מצב אחודה", "סטטוס BPM", "ProcessId", "מספר תיק", "האם יש המשך תהליך"]]  # Ensure column order
-
     df.to_excel(output_file, index=False)
-    print(f"✅ Data written to {output_file} with {len(df)} cases.")
-
-
-def create_output_with_all_status_cases(leading_statuses_list: list, output_file: str) -> None:
-    """
-    Create an output Excel file with Case IDs and their corresponding leading statuses.
-    The Excel file will contain columns: 'מצב אחודה' and 'מספר תיק'.
-
-    Args:
-        leading_statuses_list (list): List of dictionaries containing 'CaseId' and 'LeadingStatus'.
-        output_file (str): The file path to save the output Excel file.
-
-    Returns:
-        None
-    """
-    # List to store the data for the DataFrame
-    case_data_to_pd = []
-
-    for case in leading_statuses_list:
-        case_id = case.get("CaseId")
-        leading_status = case.get("LeadingStatus")
-
-        # Append the case data to the list
-        case_data_to_pd.append({
-            "מצב אחודה": leading_status,  # Leading status mapped to "מצב אחודה"
-            "מספר תיק": case_id  # Case ID as "מספר תיק"
-        })
-
-    # Create a DataFrame from the case data
-    df = pd.DataFrame(case_data_to_pd)
-
-    # Save the DataFrame to an Excel file
-    df.to_excel(output_file, index=False)
-
-    print(f"Data has been successfully written to {output_file}.")
-
+    print(f"📁 Excel file created: {output_file}")
 
 
 
@@ -714,12 +704,64 @@ def parse_conv_status_by_case_ids(case_ids: list, db: Database) -> list:
 
     return conv_statuses_list
 
-def check_continued_process_status(case_ids, db):
+# def check_continued_process_status(case_ids, db):
+#     """
+#     Checks if any ContinuedProcessId exists (not None) for each case.
+
+#     Args:
+#         case_ids (list): List of case IDs to process.
+#         db: MongoDB database connection.
+
+#     Returns:
+#         dict: {case_id: True/False/None}
+#     """
+#     collection = db["Case"]
+#     results = {}
+
+#     for case_id in case_ids:
+#         try:
+#             document = collection.find_one(
+#                 {"_id": case_id},
+#                 {"Decisions": 1, "_id": 0}
+#             )
+
+#             if not document:
+#                 print(f"❌ Case ID {case_id}: Document not found.")
+#                 results[case_id] = None
+#                 continue
+
+#             has_cp = False
+#             decisions = document.get("Decisions", [])
+
+#             for decision in decisions:
+#                 for req in decision.get("DecisionRequests", []):
+#                     for sub in req.get("SubDecisions", []):
+#                         if sub.get("ContinuedProcessId") is not None:
+#                             has_cp = True
+#                             break
+#                     if has_cp:
+#                         break
+#                 if has_cp:
+#                     break
+
+#             results[case_id] = has_cp
+
+#         except Exception as e:
+#             print(f"❌ Error processing Case ID {case_id}: {e}")
+#             results[case_id] = None
+
+#     return results
+
+
+
+def check_specific_continued_process_status(caseid_table, decisionid_table, subdecision_table, db):
     """
-    Checks if any ContinuedProcessId exists (not None) for each case.
+    Checks if ContinuedProcessId is set (not None) for specific (case_id, decision_id, subdecision_id) triples.
 
     Args:
-        case_ids (list): List of case IDs to process.
+        caseid_table (list): List of Case IDs.
+        decisionid_table (list): List of Decision IDs.
+        subdecision_table (list): List of SubDecision IDs.
         db: MongoDB database connection.
 
     Returns:
@@ -728,37 +770,36 @@ def check_continued_process_status(case_ids, db):
     collection = db["Case"]
     results = {}
 
-    for case_id in case_ids:
+    for case_id, decision_id, subdecision_id in zip(caseid_table, decisionid_table, subdecision_table):
         try:
-            document = collection.find_one(
+            doc = collection.find_one(
                 {"_id": case_id},
-                {"Decisions": 1, "_id": 0}
+                {"Decisions": 1}
             )
 
-            if not document:
-                print(f"❌ Case ID {case_id}: Document not found.")
+            if not doc:
                 results[case_id] = None
                 continue
 
-            has_cp = False
-            decisions = document.get("Decisions", [])
-
-            for decision in decisions:
+            found = False
+            for decision in doc.get("Decisions", []):
+                if decision.get("DecisionId") != decision_id:
+                    continue
                 for req in decision.get("DecisionRequests", []):
                     for sub in req.get("SubDecisions", []):
-                        if sub.get("ContinuedProcessId") is not None:
-                            has_cp = True
+                        if sub.get("SubDecisionId") == subdecision_id:
+                            results[case_id] = sub.get("ContinuedProcessId") is not None
+                            found = True
                             break
-                    if has_cp:
+                    if found:
                         break
-                if has_cp:
+                if found:
                     break
 
-            results[case_id] = has_cp
+            if not found:
+                results[case_id] = None
 
-        except Exception as e:
-            print(f"❌ Error processing Case ID {case_id}: {e}")
+        except Exception:
             results[case_id] = None
 
     return results
-
