@@ -374,10 +374,15 @@ if __name__ == "__main__":
                 
                 #parse_conv_status_by_case_ids(cases_list, db)
             
-            #elif choice == 2:
+            elif choice == 2:
+                 # Step 2: Get the first process ID per case from Mongo (no sorting)
+                list_of_process_ids = fetch_all_process_ids_by_case_ids(cases_list, db)
+
                 #list_of_leads = parse_leading_status_by_case_ids(cases_list, db)
                # create_output_with_all_status_cases(list_of_leads,"output_statuses.xlsx")
-    
+                # Step 5: Check if ContinuedProcessId exists in any decision for each case
+                continued_process_map = check_specific_continued_process_status(
+                    caseid_table, decisionid_table, subdecision_table, db,list_of_process_ids)
             elif choice == 3:
                  # Step 1: Get the leading status from Mongo
                 list_of_leads = parse_leading_status_by_case_ids(cases_list, db)
@@ -399,7 +404,7 @@ if __name__ == "__main__":
 
                 # Step 5: Check if ContinuedProcessId exists in any decision for each case
                 continued_process_map = check_specific_continued_process_status(
-                    caseid_table, decisionid_table, subdecision_table, db
+                    caseid_table, decisionid_table, subdecision_table, db,list_of_process_ids
                 )
 
                 # Step 6: Write combined results to Excel

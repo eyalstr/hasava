@@ -284,7 +284,6 @@ def create_common_output_with_all_status_cases(
             ),
             "תיק הסבה": "✔️" if is_conversion else ""
         })
-
     df = pd.DataFrame(combined_data)
     df.to_excel(output_file, index=False)
     print(f"📁 Excel file created: {output_file}")
@@ -753,29 +752,31 @@ def parse_conv_status_by_case_ids(case_ids: list, db: Database) -> list:
 #     return results
 
 
-
-def check_specific_continued_process_status(caseid_table, decisionid_table, subdecision_table, db):
+def check_specific_continued_process_status(caseid_table, decisionid_table, subdecision_table, db, list_of_process_ids):
     """
-    Checks if ContinuedProcessId is set (not None) for specific (case_id, decision_id, subdecision_id) triples.
+    Checks if ContinuedProcessId is set and matches the first process ID
+    for specific (case_id, decision_id, subdecision_id) triples.
 
     Args:
         caseid_table (list): List of Case IDs.
         decisionid_table (list): List of Decision IDs.
         subdecision_table (list): List of SubDecision IDs.
         db: MongoDB database connection.
+        list_of_process_ids (dict): {case_id: [process_ids]}
 
     Returns:
-        dict: {case_id: True/False/None}
+        dict: {case_id: True / False / None}
     """
     collection = db["Case"]
     results = {}
 
     for case_id, decision_id, subdecision_id in zip(caseid_table, decisionid_table, subdecision_table):
         try:
-            doc = collection.find_one(
-                {"_id": case_id},
-                {"Decisions": 1}
-            )
+            if decision_id == 0:
+                results[case_id] = None
+                continue
+
+            doc = collection.find_one({"_id": case_id}, {"Decisions": 1})
 
             if not doc:
                 results[case_id] = None
@@ -788,7 +789,11 @@ def check_specific_continued_process_status(caseid_table, decisionid_table, subd
                 for req in decision.get("DecisionRequests", []):
                     for sub in req.get("SubDecisions", []):
                         if sub.get("SubDecisionId") == subdecision_id:
-                            results[case_id] = sub.get("ContinuedProcessId") is not None
+                            continued_process_id = sub.get("ContinuedProcessId")
+                            case_process_list = list_of_process_ids.get(case_id, [])
+                            matched_process = case_process_list[0] if case_process_list else None
+
+                            results[case_id] = (continued_process_id == matched_process)
                             found = True
                             break
                     if found:
@@ -799,7 +804,9 @@ def check_specific_continued_process_status(caseid_table, decisionid_table, subd
             if not found and case_id not in results:
                 results[case_id] = None
 
-        except Exception:
+        except Exception as e:
+            print(f"❌ Error processing case {case_id}: {e}")
             results[case_id] = None
-
+    
     return results
+
