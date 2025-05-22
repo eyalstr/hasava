@@ -25,7 +25,7 @@ from menora_utils import (fetch_request_status_from_menora,
                           fetch_discussion_status_from_menora,fetch_notes_status_from_menora,fetch_distributions_from_menora,
                           fetch_decisions_from_menora,parse_conv_status_by_case_ids,check_specific_continued_process_status)
 
-from config import cases_list,caseid_table,decisionid_table,subdecision_table
+from config import cases_list,caseid_table,decisionid_table,subdecision_table,cases_ids
 from url_tests import test_url_based_case_id
 
 import os
@@ -354,13 +354,28 @@ if __name__ == "__main__":
 
             if choice == 1:
                  # Request Case Display ID from the user
-                # case_id = get_case_id_by_displayed_id(db)
+                #case_id = get_case_id_by_displayed_id(db)
+                log_and_print(f"DB={db}")
                 #list_of_leads = parse_leading_status_by_case_id(case_id, db)
+                #log_and_print(f"סטטוס מוביל : {list_of_leads}",is_hebrew=True)
                 #create_output_with_all_status_cases(list_of_leads,"output_statuses.xlsx")
-                parse_conv_status_by_case_ids(cases_list, db)
+                
+                 # Step 2: Get the first process ID per case from Mongo (no sorting)
+                list_of_process_ids = fetch_all_process_ids_by_case_ids(cases_ids, db)
+
+                # Step 3: Get BPM status of first process for each case (from SQL)
+                mapping_cases_tbl = check_first_process_alive(
+                    list_of_process_ids,
+                    server_name,
+                    database_name,
+                    user_name,
+                    password
+                )
+                
+                #parse_conv_status_by_case_ids(cases_list, db)
             
-            elif choice == 2:
-                list_of_leads = parse_leading_status_by_case_ids(cases_list, db)
+            #elif choice == 2:
+                #list_of_leads = parse_leading_status_by_case_ids(cases_list, db)
                # create_output_with_all_status_cases(list_of_leads,"output_statuses.xlsx")
     
             elif choice == 3:

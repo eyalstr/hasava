@@ -280,7 +280,7 @@ def create_common_output_with_all_status_cases(
             "המשך טיפול": (
                 "✔️ קיים" if has_cp is True else
                 "❌ אין" if has_cp is False else
-                "⚠️ שגיאה או חסר"
+                "✔️ לא לבדיקה"
             ),
             "תיק הסבה": "✔️" if is_conversion else ""
         })
@@ -796,7 +796,7 @@ def check_specific_continued_process_status(caseid_table, decisionid_table, subd
                 if found:
                     break
 
-            if not found:
+            if not found and case_id not in results:
                 results[case_id] = None
 
         except Exception:
