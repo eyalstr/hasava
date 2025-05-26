@@ -919,5 +919,4 @@ def validate_site_action_id(case_ids, server_name,database_name,
         except Exception as e:
             log_and_print(f"❌ שגיאה בעיבוד תיק {case_id}: {e}", "error", BOLD_RED, is_hebrew=True)
             results[case_id] = None
-    log_and_print(f"{results}")
     return results
