@@ -234,6 +234,7 @@ def fetch_request_status_from_menora(case_id, cursor):
 
 #########################################################################################################
 import pandas as pd
+from openpyxl import load_workbook  # Optional for autofit
 
 def create_common_output_with_all_status_cases(
     leading_statuses_list,
@@ -241,11 +242,12 @@ def create_common_output_with_all_status_cases(
     bpm_status_map,
     continued_process_map,
     conversion_status_list,
+    siteaction_list,
     output_file="output.xlsx"
 ):
     """
     Creates an Excel file with case ID, leading status, BPM status,
-    continued process flag, and conversion flag.
+    continued process flag, conversion flag, and SiteAction flag.
 
     Args:
         leading_statuses_list (list): List of {"CaseId": ..., "LeadingStatus": ...}
@@ -253,10 +255,9 @@ def create_common_output_with_all_status_cases(
         bpm_status_map (dict): {case_id: "alive"/"dead"/"no_process"/"error"}
         continued_process_map (dict): {case_id: True/False/None}
         conversion_status_list (list): List of {"CaseId": ..., "IsConversion": True/False}
+        siteaction_list (dict): {case_id: True/False/None}
         output_file (str): Output Excel file path
     """
-
-    # Create lookup dictionary for conversion flag
     conversion_map = {
         entry["CaseId"]: entry.get("IsConversion", False)
         for entry in conversion_status_list
@@ -271,21 +272,37 @@ def create_common_output_with_all_status_cases(
         bpm_status = bpm_status_map.get(case_id, "unknown")
         has_cp = continued_process_map.get(case_id, None)
         is_conversion = conversion_map.get(case_id, False)
+        site_action = siteaction_list.get(case_id, None)
 
         combined_data.append({
             "מספר תיק": case_id,
             "מצב אחודה": leading_status,
             "סטטוס BPM": bpm_status,
-            "ProcessId": process_ids,
-            "המשך טיפול": (
+            "תהליך": process_ids[0] if process_ids else "",
+            "ContinueProcessId שדה": (
                 "✔️ קיים" if has_cp is True else
                 "❌ אין" if has_cp is False else
                 "✔️ לא לבדיקה"
             ),
-            "תיק הסבה": "✔️" if is_conversion else ""
+            "Isconversion שדה": "✔️" if is_conversion else "",
+            "siteActionId שדה": (
+                "✔️ קיים" if site_action is True else
+                "❌ חסר" if site_action is False else
+                "✔️ לא נבדק"
+            )
         })
+
     df = pd.DataFrame(combined_data)
     df.to_excel(output_file, index=False)
+
+    # Optional: auto-size columns
+    wb = load_workbook(output_file)
+    ws = wb.active
+    for column_cells in ws.columns:
+        length = max(len(str(cell.value)) if cell.value else 0 for cell in column_cells)
+        ws.column_dimensions[column_cells[0].column_letter].width = length + 2
+    wb.save(output_file)
+
     print(f"📁 Excel file created: {output_file}")
 
 
@@ -810,3 +827,97 @@ def check_specific_continued_process_status(caseid_table, decisionid_table, subd
     
     return results
 
+
+
+def has_reference_number_for_case(case_id, server_name, database_name, user_name, password):
+    """
+    Check whether there are any ReferenceNumber entries in RequestGUIDS
+    for a given Case_Id via its associated requests.
+    
+    Returns:
+        bool: True if any ReferenceNumber found, False otherwise.
+    """
+    sql_query = """
+        SELECT ReferenceNumber
+        FROM Menora_Conversion.dbo.RequestGUIDS r
+        WHERE r.RequestID IN (
+            SELECT req.Request_ID
+            FROM Menora_Conversion.dbo.Request req
+            JOIN Menora_Conversion.dbo.Appeal a ON req.Appeal_ID = a.Appeal_ID
+            WHERE a.Case_Id = ?
+        )
+    """
+    try:
+        connection = pyodbc.connect(
+            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+            f"SERVER={server_name};"
+            f"DATABASE={database_name};"
+            f"UID={user_name};"
+            f"PWD={password};"
+            f"Trusted_Connection=yes;"
+        )
+        cursor = connection.cursor()
+        cursor.execute(sql_query, case_id)
+        row = cursor.fetchone()
+        connection.close()
+
+        return bool(row and row.ReferenceNumber)
+
+    except Exception as e:
+        log_and_print(f"❌ SQL error: {e}", "error")
+        return False
+
+
+def validate_site_action_id(case_ids, server_name,database_name,
+                            user_name,password, db):
+    """
+    Validates whether the first request in each case has a SiteActionId set.
+
+    Args:
+        case_ids (list): List of case IDs to validate.
+        db: MongoDB database connection.
+
+    Returns:
+        dict: {case_id: True / False / None}
+    """
+    collection = db["Case"]
+    results = {}
+
+    for case_id in case_ids:
+        try:
+            log_and_print(f"case_id={case_id}")
+            document = collection.find_one({"_id": case_id}, {"Requests": 1, "_id": 0})
+
+            if not document:
+                log_and_print(f"לא נמצא מסמך עבור מספר תיק {case_id}.", "info", BOLD_RED, is_hebrew=True)
+                results[case_id] = None
+                continue
+
+            requests = document.get("Requests", [])
+            if not isinstance(requests, list):
+                log_and_print(f"תבנית שדה 'Requests' שגויה עבור תיק {case_id}.", "info", BOLD_RED, is_hebrew=True)
+                results[case_id] = None
+                continue
+
+            #log_and_print(f"******({len(requests)}) סה\"כ בקשות בתיק *****", "info", BOLD_GREEN, is_hebrew=True)
+
+            if not requests:
+                results[case_id] = False  # No requests at all
+                continue
+
+            site_action_id = requests[0].get("SiteActionId")
+
+            if site_action_id:
+                results[case_id] = True
+            else:
+                if (has_reference_number_for_case(case_id, server_name, database_name, user_name, password)):                   
+                    results[case_id] = False
+                else:
+                    log_and_print("3333")
+                    results[case_id] = True
+
+        except Exception as e:
+            log_and_print(f"❌ שגיאה בעיבוד תיק {case_id}: {e}", "error", BOLD_RED, is_hebrew=True)
+            results[case_id] = None
+    log_and_print(f"{results}")
+    return results

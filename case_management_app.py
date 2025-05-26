@@ -23,9 +23,9 @@ from menora_utils import (fetch_request_status_from_menora,
                           parse_leading_status_by_case_ids,create_common_output_with_all_status_cases,
                           parse_leading_status_by_case_id,collect_cases_with_mid_request,
                           fetch_discussion_status_from_menora,fetch_notes_status_from_menora,fetch_distributions_from_menora,
-                          fetch_decisions_from_menora,parse_conv_status_by_case_ids,check_specific_continued_process_status)
+                          fetch_decisions_from_menora,parse_conv_status_by_case_ids,check_specific_continued_process_status,validate_site_action_id)
 
-from config import cases_list,caseid_table,decisionid_table,subdecision_table,cases_ids
+from config import cases_list,caseid_table,decisionid_table,subdecision_table
 from url_tests import test_url_based_case_id
 
 import os
@@ -343,7 +343,7 @@ if __name__ == "__main__":
             log_and_print("Failed to connect to MongoDB. Exiting.", "error")
             exit()
 
-        case_id = get_case_id_by_displayed_id(db)
+        #case_id = get_case_id_by_displayed_id(db)
         
         while True:
             IsOtherTask = False
@@ -361,7 +361,7 @@ if __name__ == "__main__":
                 #create_output_with_all_status_cases(list_of_leads,"output_statuses.xlsx")
                 
                  # Step 2: Get the first process ID per case from Mongo (no sorting)
-                list_of_process_ids = fetch_all_process_ids_by_case_ids(cases_ids, db)
+                list_of_process_ids = fetch_all_process_ids_by_case_ids(cases_list, db)
 
                 # Step 3: Get BPM status of first process for each case (from SQL)
                 mapping_cases_tbl = check_first_process_alive(
@@ -407,6 +407,12 @@ if __name__ == "__main__":
                     caseid_table, decisionid_table, subdecision_table, db,list_of_process_ids
                 )
 
+                # 6: validate SiteActionId is set
+                siteaction_list = validate_site_action_id(cases_list, server_name,
+                    database_name,
+                    user_name,
+                    password, db)
+
                 # Step 6: Write combined results to Excel
                 create_common_output_with_all_status_cases(
                     list_of_leads,
@@ -414,6 +420,7 @@ if __name__ == "__main__":
                     mapping_cases_tbl,
                     continued_process_map,
                     conversion_status_list,  # ✅ pass this new argument
+                    siteaction_list,
                     output_file="output.xlsx"
                 )
 
@@ -429,18 +436,10 @@ if __name__ == "__main__":
                 #sub_decision_map = extract_continued_process_ids(cases_list[6:10], db)     
              
 
-                continued_process_map = check_specific_continued_process_status(caseid_table, decisionid_table, subdecision_table, db)
-
-                for case_id, has_cp in continued_process_map.items():
-                    if has_cp is True:
-                        status = "✅ ContinuedProcessId exists"
-                    elif has_cp is False:
-                        status = "❌ ContinuedProcessId is None"
-                    else:
-                        status = "⚠️ Not found or error"
-                    
-                    print(f"{case_id}: {status}")
-
+                siteaction_list = validate_site_action_id(cases_list[0:2], server_name,
+                    database_name,
+                    user_name,
+                    password, db)
 
             # elif choice == 4:
             #      # Request Case Display ID from the user
